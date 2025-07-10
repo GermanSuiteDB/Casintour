@@ -3,8 +3,7 @@
  *@NScriptType MapReduceScript
  */
 
-define(['N/search', 'N/record', 'N/https', 'N/runtime'],
-    // test
+ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
     function (search, record, https, runtime) {
         let headers = {
             'User-Agent': 'Suitelet',
@@ -19,9 +18,10 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
         const bodyEmployees = {
             "data": {
                 "filtros": {
-                    "estado": "A"
+                    "estado": null
                 },
                 "conceptosFiltrados": [
+                    "codigo",
                     "documento",
                     "nombre",
                     "apellido",
@@ -51,7 +51,45 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                     "nivelCuatro",
                     "turno",
                     "cargo",
-                    "jefeDirecto"
+                    "jefeDirecto",
+                    "valorRetencionJudicial",
+                    "cargaFamiliarConyugue",
+                    "confidencial",
+                    "categoria",
+                    "anticipoQuincenal",
+                    "valorAntipoQuincenal",
+                    "tipoAntipoQuincenal",
+                    "jornada",
+                    "horas",
+                    "seguroMedico",
+                    "seguroConyuge",
+                    "codigoSectorial",
+                    "estadoHistorico",
+                    "estudios",
+                    "sangre",
+                    "sueldo",
+                    "grupoLiquidacion",
+                    "fondosReserva",
+                    "fondosReservaIngreso",
+                    "decimoTercero",
+                    "decimoCuarto",
+                    "contrato",
+                    "formaPago",
+                    "tipoCuentaBancaria",
+                    "cuentaBancaria",
+                    "bancoCodigo",
+                    "bancoCodigoOrigen",
+                    "neto",
+                    "tiempoVacacionesAdicionales",
+                    "establecimiento",
+                    "dobleImposicion",
+                    "condicion",
+                    "porcentajeDiscapacidad",
+                    "identificacionDiscapacidad",
+                    "estado",
+                    "galapagos",
+                    "documentoDiscapacidad",
+                    "enfermedadCatastrofica",
                 ]
             }
         };
@@ -65,17 +103,9 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
 
         function getInputData() {
             try {
-              return
                 //get token
                 let scriptObj = runtime.getCurrentScript();
-                var clientId = scriptObj.getParameter({ name: 'custscript_sdb_client_id_nominaz' });
-                var clientSecret = scriptObj.getParameter({ name: 'custscript_sdb_client_secret_nominaz' });
-                const bodyToken = {
-                    "client_id": clientId,
-                    "client_secret": clientSecret,
-                    "grant_type": "client_credentials"
-                };
-                let responseToken = postRequest(baseURL + urlToken, bodyToken);
+                let responseToken = getRefreshToken(scriptObj) 
                 let token = responseToken?.body ? JSON.parse(responseToken.body)?.response?.accessToken : null;
                 if (!token) {
                     log.error('could not generate token', responseToken)
@@ -107,13 +137,13 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 }
 
                 //get payments
-                let responsePayments = postRequest(baseURL + urlPayments, bodyPayments);
-                let payments = responsePayments?.body ? JSON.parse(responsePayments.body)?.response : null;
-                if (!payments) {
-                    log.error('could not obtain payments list', responsePayments)
-                    return [];
-                }
-                employees.push(payments);
+                // let responsePayments = postRequest(baseURL + urlPayments, bodyPayments);
+                // let payments = responsePayments?.body ? JSON.parse(responsePayments.body)?.response : null;
+                // if (!payments) {
+                //     log.error('could not obtain payments list', responsePayments)
+                //     return [];
+                // }
+                // employees.push(payments);
 
                 return employees;
             } catch (error) {
@@ -126,84 +156,23 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
 
         function map(context) {
             try {
-              return
                 var data = JSON.parse(context.value);
-                // log.debug("map data", data);
-                if (data.documento !== '0919352740') return;
-
-                //send payment information to reduce step
-                // if (data.nomina) {
-                //     for (let i = 0; i < data.nomina.length; i++) {
-                //         const payment = data.nomina[i];
-                //         if (payment.codigo) context.write({ key: payment.codigo, value: payment });
-                //     }
-                //     return;
-                // }
-
+                log.debug("map data", data);
+                if (data.documento !== '0919282699') return;
+                return
                 //search for employee
-                let firstName = data.nombre.trim();
-                let lastName = data.apellido.trim();
-                let existingId = searchEmployeeId(firstName, lastName);
+                let employeeDocumentNumber = data.documento;
+                let existingId = searchEmployeeId(employeeDocumentNumber);
+
+                let employeePhone = data.celular.trim() || null;
 
                 let employee;
-                let employeePhone = data.celular.trim() || null;
+
                 //create employee if it does not exist
                 if (existingId === -1) {
-                    employee = record.create({
-                        type: record.Type.EMPLOYEE,
-                        isDynamic: true
-                    });
-                    employee.setValue({
-                        fieldId: 'firstname',
-                        value: firstName
-                    }).setValue({
-                        fieldId: 'lastname',
-                        value: lastName
-                    })
-
-                    //employee address
-                    let employeeAddrs1 = data.direccion.trim() || null;
-                    let employeeCountry = data.paisResidencia.trim() || null;
-                    let employeeCity = data.ciudadResidencia.trim() || null;
-                    let employeeState = data.provinciaResidencia.trim() || null;
-                    if (employeeAddrs1 && employeeCountry && employeeCity) {
-                        employee.selectNewLine({
-                            sublistId: 'addressbook'
-                        });
-                        let employeeNewAddress = employee.getCurrentSublistSubrecord({
-                            sublistId: 'addressbook',
-                            fieldId: 'addressbookaddress'
-                        });
-                        employeeNewAddress.setText({
-                            fieldId: 'country',
-                            value: employeeCountry
-                        });
-                        employeeNewAddress.setValue({
-                            fieldId: 'addr1',
-                            value: employeeAddrs1
-                        });
-                        employeeNewAddress.setValue({
-                            fieldId: 'city',
-                            value: employeeCity
-                        });
-                        if (employeeState) employeeNewAddress.setValue({
-                            fieldId: 'state',
-                            value: employeeState
-                        });
-                        if (employeePhone) employeeNewAddress.setValue({
-                            fieldId: 'addrphone',
-                            value: employeePhone
-                        });
-                        employee.commitLine({
-                            sublistId: 'addressbook'
-                        });
-                    }
+                    employee = createNewEmployee();
                 } else {
-                    employee = record.load({
-                        type: record.Type.EMPLOYEE,
-                        id: existingId,
-                        isDynamic: true
-                    })
+                    employee = record.load({type: record.Type.EMPLOYEE,id: existingId,isDynamic: true})
                 }
 
                 employee.setValue({
@@ -218,9 +187,6 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 }).setValue({
                     fieldId: 'hiredate',
                     value: parseDate(data.fechaIngreso.trim())
-                }).setValue({
-                    fieldId: 'comments',
-                    value: `Document: ${data.documento.trim()}`
                 }).setValue({
                     fieldId: 'employeestatus',
                     value: 2
@@ -336,48 +302,60 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
             return new Date(year, month, day);
         }
 
-        function searchEmployeeId(firstName, lastName, fullName) {
-            let filters = [];
-            if (fullName) {
-                fullName = fullName.split(' ');
-                firstName = fullName[0];
-                lastName = fullName[1];
-                let nameFilter = search.createFilter({
-                    name: "formulatext",
-                    formula: `CASE WHEN 
-                    SUBSTR({firstname}, 0, LENGTH('${firstName}')) = '${firstName}' 
-                    AND SUBSTR({lastname}, 0, LENGTH('${lastName}')) = '${lastName}' 
-                    THEN 'T' ELSE 'F' END`,
-                    join: null,
-                    operator: search.Operator.IS,
-                    values: "T"
-                })
-                filters.push(nameFilter)
-                // filters = [
-                //     [`formulatext: CASE WHEN 
-                //         CONCAT(CONCAT({firstname}, ' '), {lastname})=
-                //         '${fullName}' THEN 'T' ELSE 'F' END`, "is", "T"]
-                // ]
-            } else {
-                filters = [
-                    ["firstname", "is", firstName],
-                    "AND",
-                    ["lastname", "is", lastName]
-                ];
-            }
-            var employeeSearchObj = search.create({
-                type: "employee",
-                filters: filters,
-                columns:
+        function searchEmployeeId(employeeDocumentNumber) {
+            var employeeFoundInternalId = null;
+            try {
+                if(!employeeDocumentNumber)return employeeFoundInternalId;
+                var employeeSearchObj = search.create({
+                    type: "employee",
+                    filters:
                     [
-                        search.createColumn({ name: "entityid", label: "Name" })
+                       ["custentitysdb_id_del_erp_anterior","is",employeeDocumentNumber]
+                    ],
+                    columns:
+                    [
+                       search.createColumn({name: "internalid", label: "ID interno"})
                     ]
-            });
-            let result = employeeSearchObj.run().getRange({
-                start: 0,
-                end: 1
-            })
-            return result.length ? result[0].id : -1;
+                });
+                employeeSearchObj.run().each(function(result){
+                   log.debug("employee result",result);
+                   employeeFoundInternalId = result.getValue({fieldId:"internalid"});
+                   return false;
+                });
+                return employeeFoundInternalId;
+            } catch (error) {
+                log.error("searchEmployeeId error",error);
+                return employeeFoundInternalId;
+            }
+        }
+
+        function createNewEmployee(data){
+            try {
+                let firstName = data.nombre.trim();
+                let lastName = data.apellido.trim(); 
+
+                employee = record.create({type: record.Type.EMPLOYEE,isDynamic: true});
+                employee.setValue({fieldId: 'firstname',value: firstName});
+                employee.setValue({fieldId: 'lastname',value: lastName});
+
+                //employee address
+                let employeeAddrs1 = data.direccion.trim() || null;
+                let employeeCountry = data.paisResidencia.trim() || null;
+                let employeeCity = data.ciudadResidencia.trim() || null;
+                let employeeState = data.provinciaResidencia.trim() || null;
+                if (employeeAddrs1 && employeeCountry && employeeCity) {
+                    employee.selectNewLine({sublistId: 'addressbook'});
+                    let employeeNewAddress = employee.getCurrentSublistSubrecord({sublistId: 'addressbook',fieldId: 'addressbookaddress'});
+                    employeeNewAddress.setText({fieldId: 'country',value: employeeCountry});
+                    employeeNewAddress.setValue({fieldId: 'addr1',value: employeeAddrs1});
+                    employeeNewAddress.setValue({fieldId: 'city',value: employeeCity});
+                    if (employeeState) employeeNewAddress.setValue({fieldId: 'state',value: employeeState});
+                    if (employeePhone) employeeNewAddress.setValue({fieldId: 'addrphone',value: employeePhone});
+                    employee.commitLine({sublistId: 'addressbook'});
+                }
+            } catch (error) {
+                log.error("createEmployee error",error);
+            }
         }
 
         function getGender(gender) {
@@ -392,11 +370,6 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 return notSpecified;
             }
         }
-
-
-
-        //Revisar los posibles valores que trae la api para hacer vaidaciones, ya que a veces cuando el campo no tiene valor la api devuelve null, '','0'
-        //Entonces antes de asginar el valor debeeriamos verificar que no sea ninguno de esos
 
         function getCivilStatus(employee, civilStatus) {
             var returnValue = null;
@@ -460,7 +433,22 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 return notSpecified
             }
         }
-
+        function getRefreshToken(scriptObj){
+            try {
+                var clientId = scriptObj.getParameter({ name: 'custscript_sdb_client_id_nominaz' });
+                var clientSecret = scriptObj.getParameter({ name: 'custscript_sdb_client_secret_nominaz' });
+                const bodyToken = {
+                    "client_id": clientId,
+                    "client_secret": clientSecret,
+                    "grant_type": "client_credentials"
+                };
+                var refreshTokenRespone = postRequest(baseURL + urlToken, bodyToken);
+                return refreshTokenRespone;
+            } catch (error) {
+                log.error("getRefreshToken error",error);
+                return null;
+            }
+        }
         return {
             getInputData: getInputData,
             map: map,

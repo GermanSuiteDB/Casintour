@@ -121,30 +121,6 @@
                     return [];
                 }
 
-                //set date range for payments
-                let useParameters = scriptObj.getParameter({ name: 'custscript_use_parameters' });
-                if (useParameters) {
-                    bodyPayments.datosBusqueda["fechaDesde"] = scriptObj.getParameter({ name: 'custscript_date_from' });
-                    bodyPayments.datosBusqueda["fechaHasta"] = scriptObj.getParameter({ name: 'custscript_date_to' });
-                } else {
-                    bodyPayments.datosBusqueda["fechaDesde"] = "1970-01-01";
-                    const date = new Date();
-                    const year = date.getFullYear();
-                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                    const day = date.getDate().toString().padStart(2, '0');
-                    const today = `${year}-${month}-${day}`;
-                    bodyPayments.datosBusqueda["fechaHasta"] = today;
-                }
-
-                //get payments
-                // let responsePayments = postRequest(baseURL + urlPayments, bodyPayments);
-                // let payments = responsePayments?.body ? JSON.parse(responsePayments.body)?.response : null;
-                // if (!payments) {
-                //     log.error('could not obtain payments list', responsePayments)
-                //     return [];
-                // }
-                // employees.push(payments);
-
                 return employees;
             } catch (error) {
                 log.error({
@@ -159,7 +135,7 @@
                 var data = JSON.parse(context.value);
                 log.debug("map data", data);
                 if (data.documento !== '0919282699') return;
-                return
+                
                 //search for employee
                 let employeeDocumentNumber = data.documento;
                 let existingId = searchEmployeeId(employeeDocumentNumber);
@@ -190,10 +166,7 @@
                 }).setValue({
                     fieldId: 'employeestatus',
                     value: 2
-                }).setValue({
-                    fieldId: 'custentity_sdb_turno_nominaz',
-                    value: data.turno.trim()
-                })
+                });
 
                 if (employeePhone) employee.setValue({
                     fieldId: 'mobilephone',
@@ -210,41 +183,7 @@
                     fieldId: 'phone',
                     value: phone
                 })
-                let hasChildren = parseBool(data.hijos);
-                employee.setValue({
-                    fieldId: 'custentity_sdb_hijos_nominaz',
-                    value: hasChildren
-                })
-                let childCount = 0;
-                let childLoad = 0;
-                if (hasChildren) {
-                    childCount = parseNumber(data.numeroHijos);
-                    childLoad = parseNumber(data.cargaFamiliarHijo);
-                }
-                employee.setValue({
-                    fieldId: 'custentity_sdb_numero_hijos_nominaz',
-                    value: childCount
-                })
-                employee.setValue({
-                    fieldId: 'custentity_sdb_carga_fam_hij_nominaz',
-                    value: childLoad
-                })
-                let asistance = parseBool(data.asistencia);
-                employee.setValue({
-                    fieldId: 'custentity_sdb_asistencia_nominaz',
-                    value: asistance
-                })
-                let civilStatus = getCivilStatus(employee, data.estadoCivil);
-                if (civilStatus) employee.setValue({
-                    fieldId: 'maritalstatus',
-                    value: civilStatus
-                })
-                let partnerName = getCouplesName(data.nombrePareja);
-                if (partnerName) employee.setValue({
-                    fieldId: 'custentity_sdb_nombre_pareja_nominaz',
-                    value: partnerName
-                })
-                let supervisor = searchEmployeeId(null, null, data.jefeDirecto.trim());
+                let supervisor = searchEmployeeId(data.jefeDirecto.trim());
                 if (supervisor !== -1) employee.setValue({
                     fieldId: 'supervisor',
                     value: supervisor
@@ -371,29 +310,29 @@
             }
         }
 
-        function getCivilStatus(employee, civilStatus) {
-            var returnValue = null;
-            try {
-                if (!civilStatus) return returnValue;
-                let field = employee.getField({
-                    fieldId: 'maritalstatus'
-                });
-                let options = field.getSelectOptions({
-                    filter: null
-                });
-                for (let i = 0; i < options.length; i++) {
-                    const option = options[i];
-                    if (option.text.trim().toUpperCase() === civilStatus.trim().toUpperCase()) {
-                        returnValue = option.value;
-                        break;
-                    }
-                }
-                return returnValue;
-            } catch (error) {
-                log.error("getCivilStatus error", error);
-                return returnValue;
-            }
-        }
+        // function getCivilStatus(employee, civilStatus) {
+        //     var returnValue = null;
+        //     try {
+        //         if (!civilStatus) return returnValue;
+        //         let field = employee.getField({
+        //             fieldId: 'maritalstatus'
+        //         });
+        //         let options = field.getSelectOptions({
+        //             filter: null
+        //         });
+        //         for (let i = 0; i < options.length; i++) {
+        //             const option = options[i];
+        //             if (option.text.trim().toUpperCase() === civilStatus.trim().toUpperCase()) {
+        //                 returnValue = option.value;
+        //                 break;
+        //             }
+        //         }
+        //         return returnValue;
+        //     } catch (error) {
+        //         log.error("getCivilStatus error", error);
+        //         return returnValue;
+        //     }
+        // }
 
         function parseBool(bool) {
             try {

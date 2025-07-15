@@ -3,7 +3,7 @@
  *@NScriptType MapReduceScript
  */
 
- define(['N/search', 'N/record', 'N/https', 'N/runtime'],
+define(['N/search', 'N/record', 'N/https', 'N/runtime'],
     function (search, record, https, runtime) {
         let headers = {
             'User-Agent': 'Suitelet',
@@ -14,14 +14,12 @@
         const baseURL = 'https://cloud.nominaz.com';
         const urlToken = '/role_manager/oauth2/token';
         const urlEmployees = '/nominaz/server/index.php/nominaz/reportes/ObtenerReporteEmpleados';
-        const urlPayments = '/report/horizontal_payroll';
         const bodyEmployees = {
             "data": {
                 "filtros": {
                     "estado": null
                 },
                 "conceptosFiltrados": [
-                    "codigo",
                     "documento",
                     "nombre",
                     "apellido",
@@ -51,61 +49,16 @@
                     "nivelCuatro",
                     "turno",
                     "cargo",
-                    "jefeDirecto",
-                    "valorRetencionJudicial",
-                    "cargaFamiliarConyugue",
-                    "confidencial",
-                    "categoria",
-                    "anticipoQuincenal",
-                    "valorAntipoQuincenal",
-                    "tipoAntipoQuincenal",
-                    "jornada",
-                    "horas",
-                    "seguroMedico",
-                    "seguroConyuge",
-                    "codigoSectorial",
-                    "estadoHistorico",
-                    "estudios",
-                    "sangre",
-                    "sueldo",
-                    "grupoLiquidacion",
-                    "fondosReserva",
-                    "fondosReservaIngreso",
-                    "decimoTercero",
-                    "decimoCuarto",
-                    "contrato",
-                    "formaPago",
-                    "tipoCuentaBancaria",
-                    "cuentaBancaria",
-                    "bancoCodigo",
-                    "bancoCodigoOrigen",
-                    "neto",
-                    "tiempoVacacionesAdicionales",
-                    "establecimiento",
-                    "dobleImposicion",
-                    "condicion",
-                    "porcentajeDiscapacidad",
-                    "identificacionDiscapacidad",
-                    "estado",
-                    "galapagos",
-                    "documentoDiscapacidad",
-                    "enfermedadCatastrofica",
+                    "jefeDirecto"
                 ]
             }
         };
-        let bodyPayments = {
-            "conceptos": ["00001-CRI", "00002-CRI", "00022-CRD", "00023-CRD", "00007-CRP", "00008-CRP"],
-            "datosBusqueda": {
-                "preliquidacionHabilitada": false
-            },
-            "agrupar": false
-        }
-
         function getInputData() {
             try {
                 //get token
                 let scriptObj = runtime.getCurrentScript();
-                let responseToken = getRefreshToken(scriptObj) 
+                let responseToken = getRefreshToken(scriptObj)
+                log.debug('getInputData token', responseToken)
                 let token = responseToken?.body ? JSON.parse(responseToken.body)?.response?.accessToken : null;
                 if (!token) {
                     log.error('could not generate token', responseToken)
@@ -115,12 +68,12 @@
 
                 //get employees
                 let responseEmployees = postRequest(baseURL + urlEmployees, bodyEmployees);
+                log.debug("getInputData responseEmployees", responseEmployees)
                 let employees = responseEmployees?.body ? JSON.parse(responseEmployees.body)?.response : null;
                 if (!employees || !employees.length) {
                     log.error('could not obtain employee list', responseEmployees)
                     return [];
                 }
-
                 return employees;
             } catch (error) {
                 log.error({
@@ -134,85 +87,61 @@
             try {
                 var data = JSON.parse(context.value);
                 log.debug("map data", data);
-                if (data.documento !== '0919282699') return;
-                
+
                 //search for employee
                 let employeeDocumentNumber = data.documento;
                 let existingId = searchEmployeeId(employeeDocumentNumber);
 
-                let employeePhone = data.celular.trim() || null;
-
                 let employee;
-
-                //create employee if it does not exist
-                if (existingId === -1) {
-                    employee = createNewEmployee();
+                // create employee if it does not exist
+                if (existingId == -1) {
+                    employee = record.create({ type: record.Type.EMPLOYEE, isDynamic: true });
+                    setEmployeeAddress(data,employee,true);
                 } else {
-                    employee = record.load({type: record.Type.EMPLOYEE,id: existingId,isDynamic: true})
+                    employee = record.load({ type: record.Type.EMPLOYEE, id: existingId, isDynamic: true })
+                    setEmployeeAddress(data,employee,false);
                 }
 
-                employee.setValue({
-                    fieldId: 'jobdescription',
-                    value: data.cargo.trim()
-                }).setValue({
-                    fieldId: 'email',
-                    value: data.email.trim()
-                }).setValue({
-                    fieldId: 'birthdate',
-                    value: parseDate(data.fechaNacimiento.trim())
-                }).setValue({
-                    fieldId: 'hiredate',
-                    value: parseDate(data.fechaIngreso.trim())
-                }).setValue({
-                    fieldId: 'employeestatus',
-                    value: 2
-                });
+                setEmployeeBodyFieldValues(data, employee);
+               
 
-                if (employeePhone) employee.setValue({
-                    fieldId: 'mobilephone',
-                    value: employeePhone
-                })
-
-                let gender = getGender(data.genero.trim());
-                employee.setValue({
-                    fieldId: 'gender',
-                    value: gender
-                })
-                let phone = getPhone(data.telefonos);
-                if (phone) employee.setValue({
-                    fieldId: 'phone',
-                    value: phone
-                })
-                let supervisor = searchEmployeeId(data.jefeDirecto.trim());
-                if (supervisor !== -1) employee.setValue({
-                    fieldId: 'supervisor',
-                    value: supervisor
-                })
                 let employeeId = employee.save({
-                    ignoreMandatoryFields: true
+                    ignoreMandatoryFields : true
                 });
-                if (existingId === -1) log.audit('employee created', employeeId);
+                if (existingId == -1) log.audit('employee created', employeeId);
                 else log.audit('employee updated', employeeId);
-                // log.audit('employee created test', data.documento)
 
+                let supervisorName = data.jefeDirecto || "null";
+                context.write({
+                    key: supervisorName,
+                    value: employeeId
+                });
             } catch (error) {
                 log.error({
                     title: 'Error in Map function',
-                    details: error.message
+                    details: error
                 })
             }
         }
 
         function reduce(context) {
             try {
-              return
-                var data = JSON.parse(context.values);
-                // log.debug("reduce data", data);
-
+                log.debug("reduce context", context)
+                let data = context.values
+                let supervisorName = context.key;
+                let supervisorEntityId = searchEmployeeIdByName(supervisorName);
+                if (supervisorEntityId != -1) {
+                    log.debug(`Found Supervisor: ${supervisorName}`, `supervisor ID: ${supervisorEntityId}`);
+                    data.forEach(employeeId => {
+                        setSupervisor(supervisorEntityId, employeeId);
+                    });
+                } else {
+                    log.debug(`NOT Found Supervisor: ${supervisorName}`, `employees: ${data}`);
+                }
             } catch (error) {
                 log.error({
                     title: 'Error in Reduce function',
-                    details: error.message
+                    details: error
                 })
             }
         }
@@ -241,59 +170,201 @@
             return new Date(year, month, day);
         }
 
-        function searchEmployeeId(employeeDocumentNumber) {
-            var employeeFoundInternalId = null;
+        function searchEmployeeIdByName(fullName) {
             try {
-                if(!employeeDocumentNumber)return employeeFoundInternalId;
+                if(!fullName || fullName == "null")return -1
+                var employeeId = -1;
                 var employeeSearchObj = search.create({
                     type: "employee",
                     filters:
                     [
-                       ["custentitysdb_id_del_erp_anterior","is",employeeDocumentNumber]
+                       ["entityid","is",fullName]
                     ],
                     columns:
                     [
                        search.createColumn({name: "internalid", label: "ID interno"})
                     ]
                 });
+                var searchResultCount = employeeSearchObj.runPaged().count;
+                log.debug("employeeSearchObj result count",searchResultCount);
                 employeeSearchObj.run().each(function(result){
-                   log.debug("employee result",result);
-                   employeeFoundInternalId = result.getValue({fieldId:"internalid"});
-                   return false;
+                    employeeId = result.getValue({name:'internalid'})
+                    return false;
+                });
+                return employeeId;
+            } catch (error) {
+                log.error("searchEmployeeIdByName error", error);
+                return -1
+            }
+        }
+
+        function searchEmployeeId(employeeDocumentNumber) {
+            var employeeFoundInternalId = -1;
+            try {
+                if (!employeeDocumentNumber) return employeeFoundInternalId;
+                var employeeSearchObj = search.create({
+                    type: "employee",
+                    filters:
+                        [
+                            ["custentity_sdb_nro_identificador_nominaz", "is", employeeDocumentNumber]
+                        ],
+                    columns:
+                        [
+                            search.createColumn({ name: "internalid", label: "ID interno" })
+                        ]
+                });
+                employeeSearchObj.run().each(function (result) {
+                    log.debug("employee result", result);
+                    employeeFoundInternalId = result.getValue({ name: "internalid" });
+                    return false;
                 });
                 return employeeFoundInternalId;
             } catch (error) {
-                log.error("searchEmployeeId error",error);
+                log.error("searchEmployeeId error", error);
                 return employeeFoundInternalId;
             }
         }
 
-        function createNewEmployee(data){
+        function getAddressSubrecord(employee, createMode) {
+            try {
+                let addressSubRecord = null;
+                if (createMode) {
+                    employee.selectNewLine({ sublistId: 'addressbook' });
+                    addressSubRecord = employee.getCurrentSublistSubrecord({
+                        sublistId: 'addressbook',
+                        fieldId: 'addressbookaddress'
+                    });
+                }else{
+                    const addressCount = employee.getLineCount({ sublistId: 'addressbook' });
+                    for (let i = 0; i < addressCount; i++) {
+                        employee.selectLine({
+                            sublistId: 'addressbook',
+                            line: i
+                        })
+                        const addrSubrec = employee.getCurrentSublistSubrecord({
+                            sublistId: 'addressbook',
+                            fieldId: 'addressbookaddress',
+                            line: i
+                        });
+                        const isNominaz = addrSubrec.getValue({fieldId: 'custrecord_sdb_is_nominaz_address'});
+                        if (isNominaz) {
+                            addressSubRecord = addrSubrec;
+                            break
+                        }
+                    }
+                }
+                return addressSubRecord;
+            } catch (error) {
+                log.error("getAddressSubrecord error",error);
+                return null;
+            }
+        }
+        
+        function fillAddressSubrecord(addressRec, data) {
+            try {
+                const addr1  = data.direccion.trim();
+                const country= data.paisResidencia.trim();
+                const city   = data.ciudadResidencia.trim();
+                const state  = data.provinciaResidencia.trim();
+                const phone  = data.telefono ? data.telefono.trim() : null;
+            
+                if (!addr1 || !country || !city) return;
+            
+                addressRec.setText({ fieldId: 'country', value: country });
+                addressRec.setValue({ fieldId: 'addr1',   value: addr1    });
+                addressRec.setValue({ fieldId: 'city',    value: city     });
+                addressRec.setValue({ fieldId: 'custrecord_sdb_is_nominaz_address',    value: true});
+                if (state) addressRec.setValue({ fieldId: 'state', value: state });
+                if (phone) addressRec.setValue({ fieldId: 'addrphone', value: phone });
+            } catch (error) {
+                log.error("fillAddressSubrecord error",error);   
+            }
+        }
+        
+        function setEmployeeAddress(data, employee,createMode) {
+            try {
+                const addressRec = getAddressSubrecord(employee, createMode);
+                if (!addressRec) return;
+                fillAddressSubrecord(addressRec, data);
+                employee.commitLine({ sublistId: 'addressbook' });
+            } catch (e) {
+                log.error('setEmployeeAddress error', e);
+            }
+        }
+        
+
+        function setEmployeeBodyFieldValues(data, employee) {
             try {
                 let firstName = data.nombre.trim();
-                let lastName = data.apellido.trim(); 
+                let lastName = data.apellido.trim();
+                employee.setValue({ fieldId: 'firstname', value: firstName });
+                employee.setValue({ fieldId: 'lastname', value: lastName });
 
-                employee = record.create({type: record.Type.EMPLOYEE,isDynamic: true});
-                employee.setValue({fieldId: 'firstname',value: firstName});
-                employee.setValue({fieldId: 'lastname',value: lastName});
+                employee.setValue({
+                    fieldId: 'custentity_sdb_nro_identificador_nominaz',
+                    value: data.codigo
+                })
+                employee.setValue({
+                    fieldId: 'jobdescription',
+                    value: data.cargo.trim()
+                })
+                employee.setValue({
+                    fieldId: 'email',
+                    value: data.email.trim()
+                })
+                employee.setValue({
+                    fieldId: 'birthdate',
+                    value: parseDate(data.fechaNacimiento.trim())
+                })
+                employee.setValue({
+                    fieldId: 'hiredate',
+                    value: parseDate(data.fechaIngreso.trim())
+                })
+                employee.setValue({
+                    fieldId: 'employeestatus',
+                    value: 2
+                })
+                employee.setValue({
+                    fieldId: 'defaultexpensereportcurrency',
+                    value: 1
+                })
+                employee.setValue({
+                    fieldId: 'custentity_sdb_employee_nominaz',
+                    value: true
+                });
+                let employeePhone = data.celular.trim() || null;
+                if (employeePhone) employee.setValue({
+                    fieldId: 'mobilephone',
+                    value: employeePhone
+                })
 
-                //employee address
-                let employeeAddrs1 = data.direccion.trim() || null;
-                let employeeCountry = data.paisResidencia.trim() || null;
-                let employeeCity = data.ciudadResidencia.trim() || null;
-                let employeeState = data.provinciaResidencia.trim() || null;
-                if (employeeAddrs1 && employeeCountry && employeeCity) {
-                    employee.selectNewLine({sublistId: 'addressbook'});
-                    let employeeNewAddress = employee.getCurrentSublistSubrecord({sublistId: 'addressbook',fieldId: 'addressbookaddress'});
-                    employeeNewAddress.setText({fieldId: 'country',value: employeeCountry});
-                    employeeNewAddress.setValue({fieldId: 'addr1',value: employeeAddrs1});
-                    employeeNewAddress.setValue({fieldId: 'city',value: employeeCity});
-                    if (employeeState) employeeNewAddress.setValue({fieldId: 'state',value: employeeState});
-                    if (employeePhone) employeeNewAddress.setValue({fieldId: 'addrphone',value: employeePhone});
-                    employee.commitLine({sublistId: 'addressbook'});
-                }
+                let gender = getGender(data.genero.trim());
+                employee.setValue({
+                    fieldId: 'gender',
+                    value: gender
+                })
+                let phone = getPhone(data.telefonos);
+                if (phone) employee.setValue({
+                    fieldId: 'phone',
+                    value: phone
+                })
             } catch (error) {
-                log.error("createEmployee error",error);
+                log.error("setEmployeeBodyFieldValues error", error);
+            }
+        }
+        function setSupervisor(supervisorId, employeeId) {
+            try {
+                if(!supervisorId || supervisorId == -1 || !employeeId || employeeId == -1) return
+                record.submitFields({
+                    type: record.Type.EMPLOYEE,
+                    id: employeeId,
+                    values: {
+                        "supervisor": supervisorId
+                    },
+                    ignoreMandatoryFields : true
+                })
+            } catch (error) {
+                log.error(`setSupervisor supId: ${supervisorId} empId: ${employeeId}`, error);
             }
         }
 
@@ -372,7 +443,7 @@
                 return notSpecified
             }
         }
-        function getRefreshToken(scriptObj){
+        function getRefreshToken(scriptObj) {
             try {
                 var clientId = scriptObj.getParameter({ name: 'custscript_sdb_client_id_nominaz' });
                 var clientSecret = scriptObj.getParameter({ name: 'custscript_sdb_client_secret_nominaz' });
@@ -384,7 +455,7 @@
                 var refreshTokenRespone = postRequest(baseURL + urlToken, bodyToken);
                 return refreshTokenRespone;
             } catch (error) {
-                log.error("getRefreshToken error",error);
+                log.error("getRefreshToken error", error);
                 return null;
             }
         }

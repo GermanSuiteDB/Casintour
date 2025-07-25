@@ -96,24 +96,24 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 // create employee if it does not exist
                 if (existingId == -1) {
                     employee = record.create({ type: record.Type.EMPLOYEE, isDynamic: true });
-                    setEmployeeAddress(data,employee,true);
+                    setEmployeeAddress(data, employee, true);
                 } else {
                     employee = record.load({ type: record.Type.EMPLOYEE, id: existingId, isDynamic: true })
-                    setEmployeeAddress(data,employee,false);
+                    setEmployeeAddress(data, employee, false);
                 }
 
                 setEmployeeBodyFieldValues(data, employee);
-               
+
 
                 let employeeId = employee.save({
-                    ignoreMandatoryFields : true
+                    ignoreMandatoryFields: true
                 });
                 if (existingId == -1) log.audit('employee created', employeeId);
                 else log.audit('employee updated', employeeId);
 
-                let supervisorName = data.jefeDirecto || "null";
+                let supervisorDNI = data.jefeDirecto || "null";
                 context.write({
-                    key: supervisorName,
+                    key: supervisorDNI,
                     value: employeeId
                 });
             } catch (error) {
@@ -128,15 +128,15 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
             try {
                 log.debug("reduce context", context)
                 let data = context.values
-                let supervisorName = context.key;
-                let supervisorEntityId = searchEmployeeIdByName(supervisorName);
+                let supervisorDNI = context.key;
+                let supervisorEntityId = searchEmployeeId(supervisorDNI);
                 if (supervisorEntityId != -1) {
-                    log.debug(`Found Supervisor: ${supervisorName}`, `supervisor ID: ${supervisorEntityId}`);
+                    log.debug(`Found Supervisor: ${supervisorDNI}`, `supervisor internal ID: ${supervisorEntityId}`);
                     data.forEach(employeeId => {
                         setSupervisor(supervisorEntityId, employeeId);
                     });
                 } else {
-                    log.debug(`NOT Found Supervisor: ${supervisorName}`, `employees: ${data}`);
+                    log.debug(`NOT Found Supervisor: ${supervisorDNI}`, `employees: ${data}`);
                 }
             } catch (error) {
                 log.error({
@@ -172,23 +172,23 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
 
         function searchEmployeeIdByName(fullName) {
             try {
-                if(!fullName || fullName == "null")return -1
+                if (!fullName || fullName == "null") return -1
                 var employeeId = -1;
                 var employeeSearchObj = search.create({
                     type: "employee",
                     filters:
-                    [
-                       ["entityid","is",fullName]
-                    ],
+                        [
+                            ["entityid", "is", fullName]
+                        ],
                     columns:
-                    [
-                       search.createColumn({name: "internalid", label: "ID interno"})
-                    ]
+                        [
+                            search.createColumn({ name: "internalid", label: "ID interno" })
+                        ]
                 });
                 var searchResultCount = employeeSearchObj.runPaged().count;
-                log.debug("employeeSearchObj result count",searchResultCount);
-                employeeSearchObj.run().each(function(result){
-                    employeeId = result.getValue({name:'internalid'})
+                log.debug("employeeSearchObj result count", searchResultCount);
+                employeeSearchObj.run().each(function (result) {
+                    employeeId = result.getValue({ name: 'internalid' })
                     return false;
                 });
                 return employeeId;
@@ -234,7 +234,7 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                         sublistId: 'addressbook',
                         fieldId: 'addressbookaddress'
                     });
-                }else{
+                } else {
                     const addressCount = employee.getLineCount({ sublistId: 'addressbook' });
                     for (let i = 0; i < addressCount; i++) {
                         employee.selectLine({
@@ -246,7 +246,7 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                             fieldId: 'addressbookaddress',
                             line: i
                         });
-                        const isNominaz = addrSubrec.getValue({fieldId: 'custrecord_sdb_is_nominaz_address'});
+                        const isNominaz = addrSubrec.getValue({ fieldId: 'custrecord_sdb_is_nominaz_address' });
                         if (isNominaz) {
                             addressSubRecord = addrSubrec;
                             break
@@ -255,33 +255,33 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 }
                 return addressSubRecord;
             } catch (error) {
-                log.error("getAddressSubrecord error",error);
+                log.error("getAddressSubrecord error", error);
                 return null;
             }
         }
-        
+
         function fillAddressSubrecord(addressRec, data) {
             try {
-                const addr1  = data.direccion.trim();
-                const country= data.paisResidencia.trim();
-                const city   = data.ciudadResidencia.trim();
-                const state  = data.provinciaResidencia.trim();
-                const phone  = data.telefono ? data.telefono.trim() : null;
-            
+                const addr1 = data.direccion.trim();
+                const country = data.paisResidencia.trim();
+                const city = data.ciudadResidencia.trim();
+                const state = data.provinciaResidencia.trim();
+                const phone = data.telefono ? data.telefono.trim() : null;
+
                 if (!addr1 || !country || !city) return;
-            
+
                 addressRec.setText({ fieldId: 'country', value: country });
-                addressRec.setValue({ fieldId: 'addr1',   value: addr1    });
-                addressRec.setValue({ fieldId: 'city',    value: city     });
-                addressRec.setValue({ fieldId: 'custrecord_sdb_is_nominaz_address',    value: true});
+                addressRec.setValue({ fieldId: 'addr1', value: addr1 });
+                addressRec.setValue({ fieldId: 'city', value: city });
+                addressRec.setValue({ fieldId: 'custrecord_sdb_is_nominaz_address', value: true });
                 if (state) addressRec.setValue({ fieldId: 'state', value: state });
                 if (phone) addressRec.setValue({ fieldId: 'addrphone', value: phone });
             } catch (error) {
-                log.error("fillAddressSubrecord error",error);   
+                log.error("fillAddressSubrecord error", error);
             }
         }
-        
-        function setEmployeeAddress(data, employee,createMode) {
+
+        function setEmployeeAddress(data, employee, createMode) {
             try {
                 const addressRec = getAddressSubrecord(employee, createMode);
                 if (!addressRec) return;
@@ -291,7 +291,7 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
                 log.error('setEmployeeAddress error', e);
             }
         }
-        
+
 
         function setEmployeeBodyFieldValues(data, employee) {
             try {
@@ -354,14 +354,14 @@ define(['N/search', 'N/record', 'N/https', 'N/runtime'],
         }
         function setSupervisor(supervisorId, employeeId) {
             try {
-                if(!supervisorId || supervisorId == -1 || !employeeId || employeeId == -1) return
+                if (!supervisorId || supervisorId == -1 || !employeeId || employeeId == -1) return
                 record.submitFields({
                     type: record.Type.EMPLOYEE,
                     id: employeeId,
                     values: {
                         "supervisor": supervisorId
                     },
-                    ignoreMandatoryFields : true
+                    ignoreMandatoryFields: true
                 })
             } catch (error) {
                 log.error(`setSupervisor supId: ${supervisorId} empId: ${employeeId}`, error);
